@@ -1,7 +1,7 @@
 /* Meu Caixa — modo offline.
    A página vem da rede primeiro (para receber versões novas) e, sem internet, da cópia guardada.
    Ícones, leitor de QR e fonte ficam guardados depois do primeiro uso. A IA da nota fiscal nunca passa pelo cache. */
-const VERSAO = 'meu-caixa-v2';
+const VERSAO = 'meu-caixa-v3';
 const BASE = ['./', './index.html', './manifest.webmanifest', './icon.svg', './icon-180.png', './icon-192.png', './icon-512.png'];
 
 self.addEventListener('install', e => {

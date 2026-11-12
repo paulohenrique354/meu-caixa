@@ -280,7 +280,10 @@ function faturaDestaque(k) {
   const pend = [...new Set(DB.lancamentos.filter(l => l.cartao === k.id && l.fatura < atual).map(l => l.fatura))].sort();
   return pend.find(ym => resumoFatura(k, ym).falta > 0) || atual;
 }
-const tituloLanc = l => (l.descricao || cat(l.categoria).nome) + (l.parcela ? ` (${l.parcela.n}/${l.parcela.de})` : '');
+/* Pessoas que já aparecem no app: quem gastou, titulares de cartão e o próprio usuário. */
+const pessoas = () => [...new Set([DB.config.nome, ...cartoes().map(k => k.titular), ...DB.lancamentos.map(l => l.pessoa)].map(x => (x || '').trim()).filter(Boolean))].sort((a, b) => a.localeCompare(b, 'pt-BR'));
+const titularDe = id => DB.contas.find(c => c.id === id)?.titular || '';
+const tituloLanc = l => (l.descricao || l.local || cat(l.categoria).nome) + (l.parcela ? ` (${l.parcela.n}/${l.parcela.de})` : '');
 
 /* ---------- contas fixas ----------
    O mês de um lançamento no cartão é o da compra, não o da fatura; senão a cópia sairia duplicada. */
@@ -325,7 +328,7 @@ const REGRAS_ENT = [
 function sugestao(desc, tipo) {
   const d = semAcento(desc).trim(); if (d.length < 2) return null;
   const h = DB.lancamentos.filter(l => l.tipo === tipo && !l.cofrinhoId && !l.chaveSalario && semAcento(l.descricao).trim() === d).sort((a, b) => b.criadoEm - a.criadoEm)[0];
-  if (h) return { categoria: h.categoria, forma: h.forma, conta: h.conta, cartao: h.cartao, fonte: 'hist', de: h.descricao };
+  if (h) return { categoria: h.categoria, forma: h.forma, conta: h.conta, cartao: h.cartao, local: h.local, fonte: 'hist', de: h.descricao };
   const r = (tipo === 'entrada' ? REGRAS_ENT : REGRAS_SAI).find(([re]) => re.test(d));
   return r ? { categoria: r[1], fonte: 'regra' } : null;
 }
@@ -416,7 +419,7 @@ const cab = (titulo, voltar, extra = '') => `<header class="cab"><button class="
 const vazio = (icone, txt) => `<div class="vazio">${ic(icone, 34)}${txt}</div>`;
 function linhaLanc(l) {
   const c = cat(l.categoria), ent = l.tipo === 'entrada';
-  const sub = [c.nome, l.cartao ? `${nomeConta(l.cartao) || 'Cartão'} · fatura de ${MESC[Number(l.fatura.slice(5)) - 1]}` : FORMAS[l.forma] && !ent ? FORMAS[l.forma] : '', l.fixo ? 'Fixo' : '', l.itens?.length ? `${l.itens.length} ${l.itens.length === 1 ? 'item' : 'itens'}` : ''].filter(Boolean).join(' · ');
+  const sub = [c.nome, l.pessoa || '', l.local && l.local !== l.descricao ? l.local : '', l.cartao ? `${nomeConta(l.cartao) || 'Cartão'} · fatura de ${MESC[Number(l.fatura.slice(5)) - 1]}` : FORMAS[l.forma] && !ent ? FORMAS[l.forma] : '', l.fixo ? 'Fixo' : '', l.itens?.length ? `${l.itens.length} ${l.itens.length === 1 ? 'item' : 'itens'}` : ''].filter(Boolean).join(' · ');
   return `<button class="ln" data-a="verLanc" data-id="${l.id}"><span class="ci" style="background:${c.cor}">${ic(c.icone, 20)}</span><span class="tx"><b>${esc(tituloLanc(l))}</b><span>${esc(sub)}</span></span><span class="vl num ${ent ? 'vg' : ''}">${ent ? '+' : '-'} ${fmt(l.valor)}</span></button>`;
 }
 const ordenar = ls => ls.slice().sort((a, b) => b.data.localeCompare(a.data) || b.criadoEm - a.criadoEm);

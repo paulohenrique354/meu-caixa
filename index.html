@@ -626,7 +626,10 @@ function faturaDestaque(k) {
   const pend = [...new Set(DB.lancamentos.filter(l => l.cartao === k.id && l.fatura < atual).map(l => l.fatura))].sort();
   return pend.find(ym => resumoFatura(k, ym).falta > 0) || atual;
 }
-const tituloLanc = l => (l.descricao || cat(l.categoria).nome) + (l.parcela ? ` (${l.parcela.n}/${l.parcela.de})` : '');
+/* Pessoas que já aparecem no app: quem gastou, titulares de cartão e o próprio usuário. */
+const pessoas = () => [...new Set([DB.config.nome, ...cartoes().map(k => k.titular), ...DB.lancamentos.map(l => l.pessoa)].map(x => (x || '').trim()).filter(Boolean))].sort((a, b) => a.localeCompare(b, 'pt-BR'));
+const titularDe = id => DB.contas.find(c => c.id === id)?.titular || '';
+const tituloLanc = l => (l.descricao || l.local || cat(l.categoria).nome) + (l.parcela ? ` (${l.parcela.n}/${l.parcela.de})` : '');
 
 /* ---------- contas fixas ----------
    O mês de um lançamento no cartão é o da compra, não o da fatura; senão a cópia sairia duplicada. */
@@ -671,7 +674,7 @@ const REGRAS_ENT = [
 function sugestao(desc, tipo) {
   const d = semAcento(desc).trim(); if (d.length < 2) return null;
   const h = DB.lancamentos.filter(l => l.tipo === tipo && !l.cofrinhoId && !l.chaveSalario && semAcento(l.descricao).trim() === d).sort((a, b) => b.criadoEm - a.criadoEm)[0];
-  if (h) return { categoria: h.categoria, forma: h.forma, conta: h.conta, cartao: h.cartao, fonte: 'hist', de: h.descricao };
+  if (h) return { categoria: h.categoria, forma: h.forma, conta: h.conta, cartao: h.cartao, local: h.local, fonte: 'hist', de: h.descricao };
   const r = (tipo === 'entrada' ? REGRAS_ENT : REGRAS_SAI).find(([re]) => re.test(d));
   return r ? { categoria: r[1], fonte: 'regra' } : null;
 }
@@ -762,7 +765,7 @@ const cab = (titulo, voltar, extra = '') => `<header class="cab"><button class="
 const vazio = (icone, txt) => `<div class="vazio">${ic(icone, 34)}${txt}</div>`;
 function linhaLanc(l) {
   const c = cat(l.categoria), ent = l.tipo === 'entrada';
-  const sub = [c.nome, l.cartao ? `${nomeConta(l.cartao) || 'Cartão'} · fatura de ${MESC[Number(l.fatura.slice(5)) - 1]}` : FORMAS[l.forma] && !ent ? FORMAS[l.forma] : '', l.fixo ? 'Fixo' : '', l.itens?.length ? `${l.itens.length} ${l.itens.length === 1 ? 'item' : 'itens'}` : ''].filter(Boolean).join(' · ');
+  const sub = [c.nome, l.pessoa || '', l.local && l.local !== l.descricao ? l.local : '', l.cartao ? `${nomeConta(l.cartao) || 'Cartão'} · fatura de ${MESC[Number(l.fatura.slice(5)) - 1]}` : FORMAS[l.forma] && !ent ? FORMAS[l.forma] : '', l.fixo ? 'Fixo' : '', l.itens?.length ? `${l.itens.length} ${l.itens.length === 1 ? 'item' : 'itens'}` : ''].filter(Boolean).join(' · ');
   return `<button class="ln" data-a="verLanc" data-id="${l.id}"><span class="ci" style="background:${c.cor}">${ic(c.icone, 20)}</span><span class="tx"><b>${esc(tituloLanc(l))}</b><span>${esc(sub)}</span></span><span class="vl num ${ent ? 'vg' : ''}">${ent ? '+' : '-'} ${fmt(l.valor)}</span></button>`;
 }
 const ordenar = ls => ls.slice().sort((a, b) => b.data.localeCompare(a.data) || b.criadoEm - a.criadoEm);
@@ -923,7 +926,7 @@ function telaInicio() {
 function listaExtrato() {
   const q = semAcento(state.busca.trim()), h = hoje(), ont = addDias(h, -1);
   const ls = ordenar(DB.lancamentos).filter(l => (!state.filtro || l.categoria === state.filtro) &&
-    (!q || semAcento(`${l.descricao} ${cat(l.categoria).nome} ${(l.itens || []).map(i => i.descricao).join(' ')}`).includes(q)));
+    (!q || semAcento(`${l.descricao} ${cat(l.categoria).nome} ${l.local || ''} ${l.pessoa || ''} ${l.cartao ? nomeConta(l.cartao) + ' ' + titularDe(l.cartao) : ''} ${(l.itens || []).map(i => i.descricao).join(' ')}`).includes(q)));
   if (!ls.length) return vazio('busca', DB.lancamentos.length ? 'Nada encontrado com esse filtro.' : 'Nenhum lançamento ainda.<br>Toque no botão + para começar.');
   const vis = ls.slice(0, state.limite), dias = {};
   vis.forEach(l => (dias[l.data] ||= []).push(l));
@@ -935,7 +938,7 @@ function listaExtrato() {
 function telaExtrato() {
   const usadas = [...new Set(DB.lancamentos.map(l => l.categoria))].map(cat).sort((a, b) => a.nome.localeCompare(b.nome));
   return `<header class="topo">${CURVA_TOPO}<div class="topo-l"><span class="logo">${LOGO}</span><span class="marca" style="font-size:20px">Extrato</span></div></header>
-  <div class="cont-t"><label class="busca">${ic('busca', 20)}<input id="busca" type="search" placeholder="Buscar descrição, categoria ou produto" value="${esc(state.busca)}" data-i="buscar" autocomplete="off"></label>
+  <div class="cont-t"><label class="busca">${ic('busca', 20)}<input id="busca" type="search" placeholder="Buscar descrição, local, pessoa ou produto" value="${esc(state.busca)}" data-i="buscar" autocomplete="off"></label>
     <div class="chips"><button class="chip ${state.filtro ? '' : 'on'}" data-a="filtrar" data-k="">Todas</button>${usadas.map(c => `<button class="chip ${state.filtro === c.id ? 'on' : ''}" data-a="filtrar" data-k="${c.id}">${c.nome}</button>`).join('')}</div>
     <div id="lista">${listaExtrato()}</div></div>`;
 }
@@ -957,6 +960,14 @@ const IND = {
   fixas: { nome: 'Contas fixas', ajuda: 'A soma das saídas que você marcou como "fixas", aquelas que se repetem todo mês. É o piso do seu custo de vida.\n\nReferência: o ideal é que fiquem em até metade da renda.',
     calc: r => ({ v: fmt(r.fixas), st: '', d: 'saídas que se repetem' }) }
 };
+/* Total de saídas por pessoa; em branco conta como o próprio usuário. Só aparece se alguém tiver informado "quem gastou". */
+function blocoPessoas(ls, titulo) {
+  if (!ls.some(l => l.tipo === 'saida' && l.pessoa)) return '';
+  const eu = DB.config.nome || 'Você', m = {};
+  ls.forEach(l => { if (l.tipo === 'saida') { const p = l.pessoa || eu; m[p] = (m[p] || 0) + l.valor; } });
+  const pp = Object.entries(m).sort((a, b) => b[1] - a[1]), tot = pp.reduce((t, e) => t + e[1], 0) || 1;
+  return `<div class="sec"><div class="sec-t"><h3>${esc(titulo)}</h3></div><div class="card" style="padding-top:4px">${pp.map(([n, v]) => `<div class="reg"><div class="l"><span>${esc(n)}</span><span class="num">${pct(v / tot)} · ${fmt(v)}</span></div><div class="barra"><i style="width:${(v / tot * 100).toFixed(0)}%;background:var(--acc)"></i></div></div>`).join('')}</div></div>`;
+}
 function telaRelatorios() {
   const R = state.rel, iv = intervalo(R.tipo, R.ref), ls = entre(iv.ini, iv.fim), r = resumo(ls), h = hoje();
   const ivA = intervalo(R.tipo, mover(R.tipo, R.ref, -1)), ra = resumo(entre(ivA.ini, ivA.fim));
@@ -983,6 +994,7 @@ function telaRelatorios() {
       ${reg('Essencial', r.ess, .5)}${reg('Estilo de vida', r.est, .3)}${reg('Futuro', r.renda - r.consumo, .2, true)}
       ${r.renda ? '' : '<p class="pq mu" style="margin-top:10px">Lance a renda do período para comparar com a regra.</p>'}</div></div>
     <div class="sec"><div class="sec-t"><h3>Evolução</h3><span class="mu pq">${nM} meses</span></div><div class="card graf"><div class="leg"><span><i style="background:#1FA855"></i>Entradas</span><span><i style="background:#E5484D"></i>Saídas</span><span><i style="background:var(--tx)"></i>Saldo acumulado</span></div>${grafBarras(er, ee, es, ea)}</div></div>
+    ${blocoPessoas(ls, 'Quem gastou')}
     <div class="sec"><div class="sec-t"><h3>Como pagou</h3></div><div class="card" style="padding-top:4px">${r.sai ? Object.entries(FORMAS).map(([k, n]) => { const v = porForma[k] || 0; return `<div class="reg"><div class="l"><span>${n}</span><span class="num">${pct(v / r.sai)} · ${fmt(v)}</span></div><div class="barra"><i style="width:${(v / r.sai * 100).toFixed(0)}%;background:var(--acc)"></i></div></div>`; }).join('') : vazio('cartao', 'Sem saídas neste período.')}</div></div>
   </div>`;
 }
@@ -1052,7 +1064,7 @@ const ST_FAT = { paga: ['ok', 'Paga'], aberta: ['', 'Aberta'], fechada: ['at', '
 const nomeFatura = ym => `${cap(MESES[Number(ym.slice(5)) - 1])}/${ym.slice(0, 4)}`;
 function linhaCartao(k) {
   const f = resumoFatura(k, faturaDestaque(k)), usado = limiteUsado(k), u = k.limite ? usado / k.limite : 0, st = ST_FAT[f.status];
-  return `<button class="conta" style="width:100%;text-align:left" data-a="verCartao" data-id="${k.id}"><span class="sig" style="background:${k.cor}">${esc(k.sigla)}</span><div class="tx"><b>${esc(k.nome)}</b><small>Fatura de ${nomeFatura(f.ym)} · vence ${br(f.venc).slice(0, 5)}</small><b class="num">${fmt(f.total)}</b>${k.limite ? `<div class="barra" style="margin:6px 0 3px"><i class="${u >= .9 ? 'al' : u >= .7 ? 'at' : ''}" style="width:${Math.min(100, u * 100).toFixed(0)}%"></i></div><small>Limite disponível: ${fmt(Math.max(k.limite - usado, 0))}</small>` : ''}</div><span class="st ${st[0]}">${st[1]}</span></button>`;
+  return `<button class="conta" style="width:100%;text-align:left" data-a="verCartao" data-id="${k.id}"><span class="sig" style="background:${k.cor}">${esc(k.sigla)}</span><div class="tx"><b>${esc(k.nome)}</b><small>${k.titular ? esc(k.titular) + ' · ' : ''}Fatura de ${nomeFatura(f.ym)} · vence ${br(f.venc).slice(0, 5)}</small><b class="num">${fmt(f.total)}</b>${k.limite ? `<div class="barra" style="margin:6px 0 3px"><i class="${u >= .9 ? 'al' : u >= .7 ? 'at' : ''}" style="width:${Math.min(100, u * 100).toFixed(0)}%"></i></div><small>Limite disponível: ${fmt(Math.max(k.limite - usado, 0))}</small>` : ''}</div><span class="st ${st[0]}">${st[1]}</span></button>`;
 }
 function telaContas() {
   const bs = contasBanco(), ks = cartoes();
@@ -1069,6 +1081,7 @@ function formCartao(k) {
   const e = k || { nome: '', fechamento: 1, vencimento: 10, limite: 0, cor: CORES_CONTA[6] }; state.edit = k ? k.id : null;
   abrirSheet(`<div class="sheet-t"><h2>${k ? 'Editar cartão' : 'Novo cartão de crédito'}</h2><button class="ib" data-a="fechar" aria-label="Fechar">${ic('x')}</button></div>
     <label class="cp">Nome do cartão<input id="xNome" maxlength="30" placeholder="Ex.: Nubank, Itaú Click" value="${esc(e.nome)}"></label>
+    <label class="cp">Nome do titular do cartão<input id="xTit" maxlength="40" autocomplete="off" placeholder="Nome de quem é dono do cartão" value="${esc(e.titular || '')}"></label>
     <div class="duas"><label class="cp">Dia em que fecha<input id="xFech" type="number" inputmode="numeric" min="1" max="31" value="${e.fechamento}"></label><label class="cp">Dia em que vence<input id="xVenc" type="number" inputmode="numeric" min="1" max="31" value="${e.vencimento}"></label></div>
     <label class="cp">Limite (R$, opcional)<input id="xLim" class="money" inputmode="numeric" value="${num(e.limite)}"></label>
     <div class="cp">Cor</div><div class="cores">${CORES_CONTA.map(c => `<label><input type="radio" name="xCor" value="${c}"${c === e.cor ? ' checked' : ''}><span style="background:${c}"></span></label>`).join('')}</div>
@@ -1079,10 +1092,11 @@ function verCartao(k) {
   const atual = faturaDe(k, hoje()).fatura, dest = faturaDestaque(k), f = resumoFatura(k, dest), usado = limiteUsado(k), u = k.limite ? usado / k.limite : 0;
   const yms = [...new Set([...DB.lancamentos.filter(l => l.cartao === k.id).map(l => l.fatura), atual])].filter(ym => ym >= ymMais(atual, -3)).sort().slice(0, 15);
   abrirSheet(`<div class="sheet-t"><h2>${esc(k.nome)}</h2><button class="ib" data-a="fechar" aria-label="Fechar">${ic('x')}</button></div>
-    <p class="pq mu" style="margin-top:2px">Fecha dia ${k.fechamento} · vence dia ${k.vencimento}${k.limite ? ` · limite de ${fmt(k.limite)}` : ''}</p>
+    <p class="pq mu" style="margin-top:2px">${k.titular ? `Titular: ${esc(k.titular)} · ` : ''}Fecha dia ${k.fechamento} · vence dia ${k.vencimento}${k.limite ? ` · limite de ${fmt(k.limite)}` : ''}</p>
     ${k.limite ? `<div class="barra" style="margin-top:10px"><i class="${u >= .9 ? 'al' : u >= .7 ? 'at' : ''}" style="width:${Math.min(100, u * 100).toFixed(0)}%"></i></div><p class="pq mu" style="margin-top:5px">Usado ${fmt(usado)} · disponível ${fmt(Math.max(k.limite - usado, 0))}</p>` : ''}
     <div class="sec"><div class="sec-t"><h3>Faturas</h3></div><div class="card" style="padding:2px 14px">${yms.map(ym => { const r = resumoFatura(k, ym), st = ST_FAT[r.status];
       return `<div class="ln"><span class="tx"><b>${nomeFatura(ym)}</b><span style="white-space:normal">Vence ${br(r.venc)}${r.pagamento ? ` · ${fmt(r.pago)} pago em ${br(r.pagamento.data)}` : ''}${r.pagamento && r.falta ? ` · faltam ${fmt(r.falta)}` : ''} · ${r.ls.length} compra${r.ls.length === 1 ? '' : 's'}</span></span><span class="dir"><b class="num">${fmt(r.total)}</b><br><span class="st ${st[0]}">${st[1]}</span></span>${r.status === 'paga' ? `<button class="bt pq sec2" data-a="desfazerPag" data-id="${k.id}" data-k="${ym}">Desfazer</button>` : r.falta > 0 ? `<button class="bt pq" data-a="pagarFatura" data-id="${k.id}" data-k="${ym}">Pagar</button>` : ''}</div>`; }).join('')}</div></div>
+    ${blocoPessoas(f.ls, `Quem gastou na fatura de ${nomeFatura(dest)}`)}
     <div class="sec"><div class="sec-t"><h3>Compras na fatura de ${nomeFatura(dest)}</h3></div><div class="card" style="padding:4px 14px">${f.ls.length ? ordenar(f.ls).map(linhaLanc).join('') : vazio('cartao', 'Nenhuma compra nesta fatura.')}</div></div>
     <div class="linha-bt"><button class="bt sec2" data-a="apagarConta" data-id="${k.id}">${ic('lixo', 18)}Apagar</button><button class="bt" data-a="editarConta" data-id="${k.id}">${ic('lapis', 18)}Editar</button></div>`);
 }
@@ -1224,7 +1238,7 @@ function lerEdicaoNota() {
 }
 
 /* ---------- lançamento: formulário e detalhes ---------- */
-const novoLanc = campos => ({ id: uid(), tipo: 'saida', valor: 0, data: hoje(), categoria: 'outros', forma: 'pix', conta: '', fixo: false, descricao: '', itens: [], chaveNota: '', foto: '', origem: '', chaveSalario: '', cofrinhoId: '', movId: '', cartao: '', fatura: '', dataCompra: '', grupo: '', parcela: null, criadoEm: Date.now(), ...campos });
+const novoLanc = campos => ({ id: uid(), tipo: 'saida', valor: 0, data: hoje(), categoria: 'outros', forma: 'pix', conta: '', fixo: false, descricao: '', itens: [], chaveNota: '', foto: '', origem: '', chaveSalario: '', cofrinhoId: '', movId: '', cartao: '', fatura: '', dataCompra: '', grupo: '', parcela: null, local: '', pessoa: '', criadoEm: Date.now(), ...campos });
 /* As 8 categorias que a pessoa mais usou nos últimos 90 dias, completadas com as mais comuns. */
 function topCategorias(tipo) {
   const lim = addDias(hoje(), -90), cont = {}, fora = ['reserva', 'cofrinhos', 'resgate'];
@@ -1251,16 +1265,20 @@ function formLanc(l, tipo = 'saida') {
     <label class="cp">Descrição<input id="fDesc" maxlength="60" list="dlDesc" autocomplete="off" placeholder="Ex.: Uber, mercado, conta de luz" value="${esc(e.descricao)}"></label>
     <datalist id="dlDesc">${descs.map(d => `<option value="${esc(d)}">`).join('')}</datalist>
     <p class="dica" id="fDica" aria-live="polite"></p>
+    <label class="cp" id="fLocalBox" ${e.tipo === 'entrada' ? 'hidden' : ''}>Onde foi gasto<input id="fLocal" maxlength="60" list="dlLocal" autocomplete="off" placeholder="Ex.: Supermercado Bom Preço, posto, loja" value="${esc(e.local || '')}"></label>
+    <datalist id="dlLocal">${[...new Set(DB.lancamentos.slice().sort((a, b) => b.criadoEm - a.criadoEm).map(x => x.local).filter(Boolean))].slice(0, 80).map(d => `<option value="${esc(d)}">`).join('')}</datalist>
     <div class="cp" style="margin-top:4px">Categoria</div><div class="cgrid" id="fGrid">${gridCat(e.tipo, e.categoria)}</div>
     <details class="mais"><summary>Ver todas as categorias</summary><select id="fCat" class="inp" data-c="catSel" aria-label="Categoria">${optsCat(e.tipo, e.categoria)}</select></details>
     <div class="cp">Data</div><div class="datas"><button type="button" class="chip" data-a="dataRapida" data-n="0">Hoje</button><button type="button" class="chip" data-a="dataRapida" data-n="-1">Ontem</button><input id="fData" class="inp" type="date" value="${e.data}" aria-label="Data"></div>
     <div class="cp" id="fFormaRot">Como ${e.tipo === 'entrada' ? 'recebeu' : 'pagou'}</div>
     <div class="seg">${Object.entries(FORMAS).map(([v, r]) => `<label><input type="radio" name="fForma" value="${v}" data-c="formaMudou"${v === e.forma ? ' checked' : ''}><span>${r}</span></label>`).join('')}</div>
-    <div id="fCartaoBox" ${credito ? '' : 'hidden'}><div class="duas"><label class="cp">Cartão<select id="fCartao" data-c="parcMudou">${ks.map(k => `<option value="${k.id}"${k.id === e.cartao ? ' selected' : ''}>${esc(k.nome)}</option>`).join('')}</select></label>
+    <div id="fCartaoBox" ${credito ? '' : 'hidden'}><div class="duas"><label class="cp">Cartão<select id="fCartao" data-c="parcMudou">${ks.map(k => `<option value="${k.id}"${k.id === e.cartao ? ' selected' : ''}>${esc(k.nome)}${k.titular ? ' · ' + esc(k.titular) : ''}</option>`).join('')}</select></label>
       <label class="cp">Parcelas<select id="fParc" data-c="parcMudou">${Array.from({ length: 24 }, (_, i) => `<option value="${i + 1}"${i + 1 === (e.parcela?.de || 1) ? ' selected' : ''}>${i ? `${i + 1}x` : 'À vista'}</option>`).join('')}</select></label></div>
       <p class="pq mu" id="fParcInfo" style="margin-top:8px"></p></div>
     <p class="pq mu" id="fSemCartao" style="margin-top:8px" ${e.tipo === 'saida' && e.forma === 'credito' && !ks.length ? '' : 'hidden'}>Cadastre seu cartão em Mais > Minhas contas para separar as compras por fatura e parcelar.</p>
     <label class="cp" id="fContaBox" ${credito ? 'hidden' : ''}>Conta<select id="fConta">${optsConta(e.conta)}</select></label>
+    <label class="cp" id="fPessoaBox" ${e.tipo === 'entrada' ? 'hidden' : ''}>Quem gastou<input id="fPessoa" maxlength="40" list="dlPessoa" autocomplete="off" placeholder="${esc(DB.config.nome || 'Você')} (deixe em branco se foi você)" value="${esc(e.pessoa || '')}"></label>
+    <datalist id="dlPessoa">${pessoas().map(p => `<option value="${esc(p)}">`).join('')}</datalist>
     <label class="tog"><span>Lançamento fixo<small>Repete todo mês (aluguel, internet, assinatura)</small></span><input type="checkbox" class="sw" id="fFixo" ${e.fixo ? 'checked' : ''}></label>
     <div class="fixo-bt"><button class="bt full" data-a="salvarLanc">Salvar</button></div>`);
   previaParcelas();
@@ -1270,7 +1288,7 @@ function previaParcelas() {
   const box = $('#fCartaoBox'); if (!box || box.hidden) return;
   const k = cartoes().find(c => c.id === $('#fCartao').value); if (!k) return;
   const n = Number($('#fParc').value) || 1, v = centsDe($('#fValor')), f = faturaDe(k, $('#fData').value || hoje()), p = dividir(v, n);
-  $('#fParcInfo').textContent = `${n > 1 ? `${n}x de ${fmt(p[0], true)}. A 1ª parcela entra` : 'Entra'} na fatura de ${nomeFatura(f.fatura)}, que vence em ${br(f.data)}.`;
+  $('#fParcInfo').textContent = `${n > 1 ? `${n}x de ${fmt(p[0], true)}. A 1ª parcela entra` : 'Entra'} na fatura de ${nomeFatura(f.fatura)}, que vence em ${br(f.data)}.${k.titular ? ` Titular: ${k.titular}.` : ''}`;
 }
 function sugerirNoForm() {
   const dica = $('#fDica'); if (!dica || state.catManual) return;
@@ -1280,6 +1298,7 @@ function sugerirNoForm() {
     const r = s.forma && $(`input[name="fForma"][value="${s.forma}"]`); if (r) { r.checked = true; C.formaMudou(); }
     if (s.conta && contasBanco().some(c => c.id === s.conta)) $('#fConta').value = s.conta;
     if (s.cartao && $('#fCartao') && cartoes().some(c => c.id === s.cartao)) $('#fCartao').value = s.cartao;
+    if (s.local && $('#fLocal') && !$('#fLocal').value) $('#fLocal').value = s.local;
     previaParcelas();
   }
   dica.textContent = s.fonte === 'hist' ? `Igual à última vez: ${cat(s.categoria).nome}${s.forma ? ' · ' + FORMAS[s.forma] : ''}` : `Categoria sugerida: ${cat(s.categoria).nome}`;
@@ -1289,7 +1308,7 @@ function detalheLanc(l) {
   const lin = (a, b) => b ? `<div style="display:flex;justify-content:space-between;gap:12px;padding:9px 0;border-top:1px solid var(--bd);font-size:14px"><span class="mu">${a}</span><span class="dir">${b}</span></div>` : '';
   abrirSheet(`<div class="sheet-t"><h2>Detalhes</h2><button class="ib" data-a="fechar" aria-label="Fechar">${ic('x')}</button></div>
     <div style="text-align:center;padding:14px 0 16px"><span class="ci" style="width:52px;height:52px;border-radius:16px;display:grid;place-items:center;color:#fff;background:${c.cor};margin:0 auto 10px">${ic(c.icone, 26)}</span><b style="font-size:16px">${esc(tituloLanc(l))}</b><div class="num ${ent ? 'vg' : ''}" style="font-size:28px;font-weight:800;margin-top:4px">${ent ? '+' : '-'} ${fmt(l.valor)}</div></div>
-    ${lin(l.cartao ? 'Vencimento da fatura' : 'Data', br(l.data))}${lin('Data da compra', l.dataCompra ? br(l.dataCompra) : '')}${lin('Categoria', c.nome)}${lin('Grupo', GRUPOS[c.grupo]?.nome)}${lin(ent ? 'Como recebeu' : 'Como pagou', FORMAS[l.forma])}${lin('Conta', esc(nomeConta(l.conta)))}${lin('Cartão', l.cartao ? esc(nomeConta(l.cartao)) + ` · fatura de ${nomeFatura(l.fatura)}` : '')}${lin('Parcela', l.parcela ? `${l.parcela.n} de ${l.parcela.de}` : '')}${lin('Fixo', l.fixo ? 'Sim, repete todo mês' : '')}${lin('Cofrinho', cof ? esc(cof.nome) : '')}${lin('CNPJ', l.nota?.cnpj ? cnpjFmt(l.nota.cnpj) : '')}${lin('Nota nº', l.nota?.numero)}
+    ${lin(l.cartao ? 'Vencimento da fatura' : 'Data', br(l.data))}${lin('Data da compra', l.dataCompra ? br(l.dataCompra) : '')}${lin('Categoria', c.nome)}${lin('Onde foi gasto', esc(l.local || ''))}${lin('Quem gastou', esc(l.pessoa || ''))}${lin('Grupo', GRUPOS[c.grupo]?.nome)}${lin(ent ? 'Como recebeu' : 'Como pagou', FORMAS[l.forma])}${lin('Conta', esc(nomeConta(l.conta)))}${lin('Cartão', l.cartao ? esc(nomeConta(l.cartao)) + ` · fatura de ${nomeFatura(l.fatura)}` : '')}${lin('Parcela', l.parcela ? `${l.parcela.n} de ${l.parcela.de}` : '')}${lin('Titular do cartão', l.cartao ? esc(titularDe(l.cartao)) : '')}${lin('Fixo', l.fixo ? 'Sim, repete todo mês' : '')}${lin('Cofrinho', cof ? esc(cof.nome) : '')}${lin('CNPJ', l.nota?.cnpj ? cnpjFmt(l.nota.cnpj) : '')}${lin('Nota nº', l.nota?.numero)}
     ${l.itens?.length ? `<div class="sec" style="margin-top:14px"><div class="sec-t"><h3>Produtos da nota</h3></div>${l.itens.map(i => `<div style="display:flex;justify-content:space-between;gap:12px;font-size:13.5px;padding:6px 0;border-top:1px solid var(--bd)"><span>${esc(i.descricao)}</span><span class="num">${fmt(i.valor)}</span></div>`).join('')}</div>` : ''}
     ${l.nota?.link ? `<a class="pq" style="color:var(--acc);display:block;margin-top:12px" href="${esc(l.nota.link)}" target="_blank" rel="noopener noreferrer">Abrir nota na Sefaz</a>` : ''}
     ${l.foto ? `<img class="pv" style="margin-top:14px" src="${l.foto}" alt="Foto da nota">` : ''}
@@ -1334,7 +1353,7 @@ const A = {
     if (!data) return toast('Informe a data.', true);
     const ant = state.edit && DB.lancamentos.find(x => x.id === state.edit);
     const grupoAnt = ant ? (ant.grupo ? DB.lancamentos.filter(x => x.grupo === ant.grupo) : [ant]) : [];
-    const base = { tipo, categoria: $('#fCat').value, forma, fixo: $('#fFixo').checked, descricao: $('#fDesc').value.trim() };
+    const base = { tipo, categoria: $('#fCat').value, forma, fixo: $('#fFixo').checked, descricao: $('#fDesc').value.trim(), local: tipo === 'saida' ? $('#fLocal').value.trim() : '', pessoa: tipo === 'saida' ? $('#fPessoa').value.trim() : '' };
     const k = tipo === 'saida' && forma === 'credito' && !$('#fCartaoBox').hidden ? cartoes().find(c => c.id === $('#fCartao').value) : null;
     const ops = [], usados = new Set();
     if (k) {
@@ -1448,7 +1467,7 @@ const A = {
     if (!(fechamento >= 1 && fechamento <= 31) || !(vencimento >= 1 && vencimento <= 31)) return toast('Os dias de fechamento e vencimento vão de 1 a 31.', true);
     if (fechamento === vencimento) return toast('O dia do fechamento e o do vencimento precisam ser diferentes.', true);
     const ant = state.edit && DB.contas.find(c => c.id === state.edit);
-    const k = { ...(ant || { id: uid(), criadoEm: Date.now(), pagas: {}, saldoInicial: 0, dataAjuste: hoje(), ajusteEm: Date.now() }), cartao: true, nome, sigla: sigla(nome), tipo: 'Cartão de crédito', fechamento, vencimento, limite: centsDe($('#xLim')), cor: radio('xCor') || CORES_CONTA[6] };
+    const k = { ...(ant || { id: uid(), criadoEm: Date.now(), pagas: {}, saldoInicial: 0, dataAjuste: hoje(), ajusteEm: Date.now() }), cartao: true, nome, sigla: sigla(nome), tipo: 'Cartão de crédito', titular: $('#xTit').value.trim(), fechamento, vencimento, limite: centsDe($('#xLim')), cor: radio('xCor') || CORES_CONTA[6] };
     const ops = [{ s: 'contas', put: k }];
     /* mudou fechamento ou vencimento: recalcula as faturas das compras que ainda não foram pagas */
     if (ant && (ant.fechamento !== fechamento || ant.vencimento !== vencimento)) DB.lancamentos.filter(l => l.cartao === k.id && !k.pagas?.[l.fatura]).forEach(l => ops.push({ s: 'lancamentos', put: { ...l, ...faturaDe(k, l.dataCompra || l.data, (l.parcela?.n || 1) - 1) } }));
@@ -1512,7 +1531,7 @@ const A = {
     const porCat = {}; aj.itens.forEach(i => (porCat[i.categoria] ||= []).push(i));
     const kc = String(n.conta || '').startsWith('k:') ? cartoes().find(c => 'k:' + c.id === n.conta) : null;
     const pagto = kc ? { forma: 'credito', conta: '', cartao: kc.id, dataCompra: n.data, ...faturaDe(kc, n.data) } : { forma: n.forma, conta: n.conta, data: n.data };
-    const ops = Object.entries(porCat).map(([k, its], i) => ({ s: 'lancamentos', put: novoLanc({ valor: its.reduce((t, x) => t + x.valor, 0), categoria: k, ...pagto, descricao: n.estabelecimento || 'Nota fiscal', itens: its, chaveNota: ch, nota: { cnpj: n.cnpj, numero: n.numero, link: n.link }, foto: i === 0 ? n.thumb : '', criadoEm: Date.now() + i }) }));
+    const ops = Object.entries(porCat).map(([k, its], i) => ({ s: 'lancamentos', put: novoLanc({ valor: its.reduce((t, x) => t + x.valor, 0), categoria: k, ...pagto, descricao: n.estabelecimento || 'Nota fiscal', local: n.estabelecimento || '', itens: its, chaveNota: ch, nota: { cnpj: n.cnpj, numero: n.numero, link: n.link }, foto: i === 0 ? n.thumb : '', criadoEm: Date.now() + i }) }));
     if (await gravar(ops)) { state.nota = null; state.tela = 'extrato'; state.filtro = ''; state.busca = ''; render(); scrollTo(0, 0); toast(`Nota lançada em ${ops.length} categoria${ops.length > 1 ? 's' : ''}.`); }
   },
 
@@ -1522,8 +1541,8 @@ const A = {
   exportar() {
     if (!DB.lancamentos.length) return toast('Ainda não há lançamentos para exportar.');
     const q = v => { v = String(v ?? ''); return /[;"\n\r]/.test(v) ? '"' + v.replace(/"/g, '""') + '"' : v; }, dec = c => (c / 100).toFixed(2).replace('.', ',');
-    const linhas = [['Data', 'Tipo', 'Categoria', 'Grupo', 'Descrição', 'Valor', 'Forma de pagamento', 'Conta', 'Fixo', 'Produtos da nota', 'Cartão', 'Data da compra', 'Parcela']];
-    ordenar(DB.lancamentos).reverse().forEach(l => linhas.push([br(l.data), l.tipo === 'entrada' ? 'Entrada' : 'Saída', cat(l.categoria).nome, GRUPOS[grupoDe(l.categoria)]?.nome || 'Entrada', l.descricao, dec(l.valor), FORMAS[l.forma] || '', nomeConta(l.conta), l.fixo ? 'Sim' : 'Não', (l.itens || []).map(i => `${i.descricao} (${dec(i.valor)})`).join(' | '), l.cartao ? nomeConta(l.cartao) : '', l.dataCompra ? br(l.dataCompra) : '', l.parcela ? `${l.parcela.n}/${l.parcela.de}` : '']));
+    const linhas = [['Data', 'Tipo', 'Categoria', 'Grupo', 'Descrição', 'Valor', 'Forma de pagamento', 'Conta', 'Fixo', 'Produtos da nota', 'Cartão', 'Data da compra', 'Parcela', 'Onde foi gasto', 'Quem gastou', 'Titular do cartão']];
+    ordenar(DB.lancamentos).reverse().forEach(l => linhas.push([br(l.data), l.tipo === 'entrada' ? 'Entrada' : 'Saída', cat(l.categoria).nome, GRUPOS[grupoDe(l.categoria)]?.nome || 'Entrada', l.descricao, dec(l.valor), FORMAS[l.forma] || '', nomeConta(l.conta), l.fixo ? 'Sim' : 'Não', (l.itens || []).map(i => `${i.descricao} (${dec(i.valor)})`).join(' | '), l.cartao ? nomeConta(l.cartao) : '', l.dataCompra ? br(l.dataCompra) : '', l.parcela ? `${l.parcela.n}/${l.parcela.de}` : '', l.local || '', l.pessoa || '', l.cartao ? titularDe(l.cartao) : '']));
     baixar(`meu-caixa-${hoje()}.csv`, '\uFEFF' + linhas.map(l => l.map(q).join(';')).join('\r\n'), 'text/csv;charset=utf-8'); toast('Arquivo CSV gerado.');
   },
   backup() { const { apiKey, ...cfg } = DB.config; baixar(`meu-caixa-copia-${hoje()}.json`, JSON.stringify({ app: 'meu-caixa', versao: 1, exportadoEm: new Date().toISOString(), lancamentos: DB.lancamentos, cofrinhos: DB.cofrinhos, contas: DB.contas, config: cfg }), 'application/json'); toast('Cópia de segurança gerada.'); },
@@ -1586,7 +1605,7 @@ function baixar(nome, conteudo, tipo) {
 const C = {
   tipoMudou() {
     const t = radio('fTipo'), k = topCategorias(t)[0]; state.catManual = false;
-    $('#fCat').innerHTML = optsCat(t, k); aplicarCat(k); $('#fFormaRot').textContent = t === 'entrada' ? 'Como recebeu' : 'Como pagou'; $('#fDica').textContent = '';
+    $('#fCat').innerHTML = optsCat(t, k); aplicarCat(k); $('#fFormaRot').textContent = t === 'entrada' ? 'Como recebeu' : 'Como pagou'; $('#fDica').textContent = ''; $('#fLocalBox').hidden = $('#fPessoaBox').hidden = t === 'entrada';
     C.formaMudou(); sugerirNoForm();
   },
   formaMudou() {
