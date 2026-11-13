@@ -1,0 +1,52 @@
+# Publica na VPS a cada push na main, do mesmo jeito do Painel e da Central.
+# Fica DESLIGADO até alguém cadastrar no repositório (Settings > Secrets and variables > Actions):
+#   segredos  SSH_HOST, SSH_USER, SSH_PRIVATE_KEY
+#   variável  DOMINIO  (ex.: caixa.seudominio.com.br)
+# Sem eles, o trabalho só avisa e termina verde. A primeira subida é pelo deploy/instalar-vps.sh.
+name: Deploy na VPS
+
+on:
+  push:
+    branches: [main]
+  workflow_dispatch: {}
+
+concurrency:
+  group: deploy-vps
+  cancel-in-progress: false
+
+jobs:
+  deploy:
+    runs-on: ubuntu-latest
+    env:
+      CONFIGURADO: ${{ secrets.SSH_HOST != '' && secrets.SSH_PRIVATE_KEY != '' && vars.DOMINIO != '' }}
+      DOMINIO: ${{ vars.DOMINIO }}
+    steps:
+      - name: VPS ainda não configurada
+        if: env.CONFIGURADO != 'true'
+        run: echo "::notice::Deploy na VPS desligado. Cadastre SSH_HOST, SSH_USER, SSH_PRIVATE_KEY e a variável DOMINIO para ligar (ver DEPLOY.md)."
+
+      - name: Publicar na VPS
+        if: env.CONFIGURADO == 'true'
+        uses: appleboy/ssh-action@v1.0.3
+        with:
+          host: ${{ secrets.SSH_HOST }}
+          username: ${{ secrets.SSH_USER }}
+          key: ${{ secrets.SSH_PRIVATE_KEY }}
+          envs: DOMINIO
+          script: |
+            set -e
+            cd /var/www/meu-caixa
+            git pull --ff-only origin main
+            docker build -t meu-caixa:latest .
+            DOMINIO="$DOMINIO" docker stack deploy -c docker-stack.yml meu-caixa
+            docker service update --force --detach=false meu-caixa_meu-caixa > /dev/null
+
+      - name: Conferir se respondeu
+        if: env.CONFIGURADO == 'true'
+        run: |
+          for i in 1 2 3 4 5; do
+            curl -fsS "https://$DOMINIO/healthz" && exit 0
+            sleep 10
+          done
+          echo "::error::https://$DOMINIO/healthz não respondeu depois do deploy."
+          exit 1

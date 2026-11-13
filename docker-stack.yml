@@ -1,0 +1,27 @@
+# Produção na VPS com Docker Swarm + Traefik (o mesmo jeito do Painel e da Central).
+# O endereço vem da variável DOMINIO, informada no deploy:
+#   DOMINIO=caixa.seudominio.com.br docker stack deploy -c docker-stack.yml meu-caixa
+# Não há banco, volume nem segredo: os dados ficam no aparelho de cada pessoa.
+version: "3.9"
+
+services:
+  meu-caixa:
+    image: meu-caixa:latest
+    networks:
+      - traefik-public
+    deploy:
+      mode: replicated
+      replicas: 1
+      restart_policy:
+        condition: any
+      labels:
+        - traefik.enable=true
+        - traefik.http.routers.meu-caixa.rule=Host(`${DOMINIO:?informe DOMINIO, por exemplo DOMINIO=caixa.seudominio.com.br}`)
+        - traefik.http.routers.meu-caixa.entrypoints=websecure
+        - traefik.http.routers.meu-caixa.tls.certresolver=le
+        - traefik.http.services.meu-caixa.loadbalancer.server.port=80
+
+networks:
+  traefik-public:
+    external: true
+    name: traefik-public

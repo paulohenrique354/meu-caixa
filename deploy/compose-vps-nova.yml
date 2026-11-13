@@ -1,0 +1,30 @@
+# Para uma VPS NOVA, sem Traefik: o Caddy cuida do HTTPS sozinho (Let's Encrypt).
+# Na pasta do repositório:
+#   DOMINIO=caixa.seudominio.com.br docker compose -f deploy/compose-vps-nova.yml up -d --build
+# Precisa das portas 80 e 443 livres e do endereço já apontando para a VPS.
+name: meu-caixa
+
+services:
+  app:
+    build:
+      context: ..
+    image: meu-caixa:latest
+    restart: unless-stopped
+
+  caddy:
+    image: caddy:2-alpine
+    restart: unless-stopped
+    depends_on: [app]
+    ports:
+      - "80:80"
+      - "443:443"
+    environment:
+      DOMINIO: ${DOMINIO:?informe DOMINIO, por exemplo DOMINIO=caixa.seudominio.com.br}
+    volumes:
+      - ./Caddyfile:/etc/caddy/Caddyfile:ro
+      - caddy_data:/data
+      - caddy_config:/config
+
+volumes:
+  caddy_data:
+  caddy_config:

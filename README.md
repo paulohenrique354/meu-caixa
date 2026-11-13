@@ -1,19 +1,24 @@
 # Meu Caixa
 
-Personal finance app for one person, made for phones: income, expenses, accounts, credit cards with statements and installments, savings jars, budget, reports, and reading of the electronic receipt (NFC-e).
+App de finanças pessoais para uma pessoa, feito para o celular: entradas, saídas, contas, cartão de crédito com fatura e parcelas, cofrinhos, orçamento, relatórios e leitura da nota fiscal (NFC-e).
 
-**Use it:** https://paulohenrique354.github.io/meu-caixa/
+**Usar:** https://paulohenrique354.github.io/meu-caixa/
 
-On iPhone (Safari), tap Share and then "Add to Home Screen". On Android (Chrome), tap the menu and then "Install app".
+No iPhone (Safari), toque em Compartilhar e depois em "Adicionar à Tela de Início". No Android (Chrome), toque no menu e depois em "Instalar app".
 
-## Where the data lives
+## Onde ficam os dados
 
-All data stays **on the device**, in the browser itself (IndexedDB). Nothing goes to a server. Each phone or browser has its own data, so make a backup in Settings from time to time.
+Todos os dados ficam **no aparelho**, no próprio navegador (IndexedDB). Nada vai para servidor. Cada celular ou navegador tem os seus dados, então faça uma cópia de segurança em Ajustes de vez em quando.
 
-The password is a screen lock (it is stored only as a SHA-256 hash). The AI key for reading receipts, if used, is also stored only on the device.
+A senha é uma trava de tela (fica guardada só como hash SHA-256). A chave da IA para ler notas, se usada, também fica só no aparelho.
 
-## Code
+## Hospedar numa VPS
 
-- `index.html`: the complete app, generated from the parts in `src/`.
-- `src/p1.html` (screen and styles), `src/p2.js` (data and financial rules), `src/p3.js` (screens and actions). Edit the parts and run `src/build.sh`.
-- `sw.js` and `manifest.webmanifest`: let it install as an app and work offline. When you change these files, bump `VERSAO` in `sw.js`.
+Tem Dockerfile, configuração do nginx e dois caminhos prontos: VPS com Docker Swarm + Traefik, ou VPS nova com Caddy. Passo a passo em [DEPLOY.md](DEPLOY.md).
+
+## Código
+
+- `index.html`: o app completo, montado a partir das partes em `src/`.
+- `src/p1.html` (tela e estilo), `src/p2.js` (dados e regras financeiras), `src/p3.js` (telas e ações). Edite as partes e rode `src/build.sh`.
+- `sw.js` e `manifest.webmanifest`: deixam instalar como app e usar sem internet. Ao mudar o app, suba `VERSAO` no `sw.js`.
+- `Dockerfile`, `deploy/` e `docker-stack.yml`: hospedagem numa VPS (ver [DEPLOY.md](DEPLOY.md)).
